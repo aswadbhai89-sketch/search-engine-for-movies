@@ -3,8 +3,7 @@ import streamlit as st
 import sqlite3
 import requests
 import time
-import os
-from PIL import Image
+from PIL import Image, ImageDraw
 from io import BytesIO
 
 # ============================================================
@@ -88,16 +87,36 @@ def levenshtein_distance(s1, s2):
 # DATABASE FUNCTIONS
 # ============================================================
 
+def init_db():
+    """Table na ho to bana do (movies.db missing ho tab bhi app crash na ho)"""
+    conn = sqlite3.connect('movies.db')
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS movies (
+            id TEXT PRIMARY KEY,
+            title TEXT,
+            year TEXT,
+            genre TEXT,
+            rating REAL,
+            plot TEXT,
+            poster TEXT
+        )
+    ''')
+    conn.commit()
+    conn.close()
+
+
 def get_all_movies():
     """Database ki saari movies nikaalo"""
-    conn = sqlite3.connect('movies.db')
-    cursor = conn.cursor()
-    
-    cursor.execute('SELECT * FROM movies')
-    movies = cursor.fetchall()
-    
-    conn.close()
-    return movies
+    try:
+        init_db()
+        conn = sqlite3.connect('movies.db')
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM movies')
+        movies = cursor.fetchall()
+        conn.close()
+        return movies
+    except sqlite3.Error:
+        return []
 
 
 def add_movie_to_db(movie_data):
@@ -129,10 +148,10 @@ def add_movie_to_db(movie_data):
 
 def fetch_from_omdb(title, api_key):
     """OMDB se movie fetch karo"""
-    url = f"http://www.omdbapi.com/?t={title}&apikey={api_key}"
+    url = "http://www.omdbapi.com/"
     
     try:
-        response = requests.get(url, timeout=10)
+        response = requests.get(url, params={"t": title, "apikey": api_key}, timeout=10)
         data = response.json()
         
         if data.get('Response') == 'True':
@@ -143,18 +162,30 @@ def fetch_from_omdb(title, api_key):
 
 
 # ============================================================
+# PLACEHOLDER IMAGE (no external service needed)
+# ============================================================
+
+def placeholder_image(width=150, height=220):
+    """Poster na ho to grey box dikhao"""
+    img = Image.new("RGB", (width, height), "#2b2b2b")
+    ImageDraw.Draw(img).text((width // 2 - 30, height // 2 - 5), "No Poster", fill="#aaaaaa")
+    return img
+
+
+# ============================================================
 # SEARCH FUNCTION
 # ============================================================
 
 def fuzzy_search(query, movies, max_results=10):
-    """Fuzzy search karo"""
-    query = query.lower()
+    """Fuzzy search karo (typos + substring, jaise 'bat' -> 'Batman')"""
+    query = query.lower().strip()
     results = []
     
     for movie in movies:
         # movie tuple: (id, title, year, genre, rating, plot, poster)
         title = movie[1].lower()
         distance = levenshtein_distance(query, title)
+        is_substring = query in title
         
         # Similarity score calculate karo (0-100%)
         max_len = max(len(query), len(title))
@@ -163,11 +194,12 @@ def fuzzy_search(query, movies, max_results=10):
         results.append({
             'movie': movie,
             'distance': distance,
-            'similarity': similarity
+            'similarity': similarity,
+            'substring': is_substring
         })
     
-    # Distance ke hisaab se sort karo
-    results.sort(key=lambda x: x['distance'])
+    # Pehle substring matches, phir kam distance wale
+    results.sort(key=lambda x: (not x['substring'], x['distance']))
     
     return results[:max_results]
 
@@ -198,12 +230,10 @@ def main():
         # Add new movie section
         st.header("➕ Add New Movie")
         new_movie = st.text_input("Movie ka naam:")
-        api_key = os.environ.get("OMDB_API_KEY") or st.secrets.get("OMDB_API_KEY", "")
+        api_key = "69f58f62"  # Tumhari API key
         
         if st.button("Add Movie"):
-            if not api_key:
-                st.error("OMDB_API_KEY is not set. See README.")
-            elif new_movie:
+            if new_movie:
                 with st.spinner("Fetching from OMDB..."):
                     movie_data = fetch_from_omdb(new_movie, api_key)
                     
@@ -246,6 +276,7 @@ def main():
             movie = result['movie']
             distance = result['distance']
             similarity = result['similarity']
+            is_substring = result['substring']
             
             # Movie data extract karo
             movie_id, title, year, genre, rating, plot, poster = movie
@@ -254,11 +285,14 @@ def main():
             if distance == 0:
                 match_type = "EXACT MATCH"
                 match_class = "exact-match"
+            elif is_substring:
+                match_type = "PARTIAL MATCH (title contains your text)"
+                match_class = "exact-match"
             elif distance <= 3:
                 match_type = "FUZZY MATCH"
                 match_class = "fuzzy-match"
             else:
-                match_type = "PARTIAL MATCH"
+                match_type = "LOW MATCH"
                 match_class = "fuzzy-match"
             
             # Card layout
@@ -272,9 +306,9 @@ def main():
                         img = Image.open(BytesIO(response.content))
                         st.image(img, width=150)
                     except:
-                        st.image("https://via.placeholder.com/150x220?text=No+Poster", width=150)
+                        st.image(placeholder_image(), width=150)
                 else:
-                    st.image("https://via.placeholder.com/150x220?text=No+Poster", width=150)
+                    st.image(placeholder_image(), width=150)
             
             with col2:
                 # Movie info

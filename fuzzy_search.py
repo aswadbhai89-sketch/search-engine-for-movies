@@ -36,7 +36,7 @@ def get_all_movies():
     conn = sqlite3.connect('movies.db')
     cursor = conn.cursor()
     
-    cursor.execute('SELECT id, title, year, genre, rating FROM movies')
+    cursor.execute('SELECT * FROM movies')
     movies = cursor.fetchall()
     
     conn.close()
@@ -52,16 +52,16 @@ def fuzzy_search(query, movies, max_results=5):
     User ke input se best movies dhundo
     (typos allowed)
     """
-    query = query.lower()
+    query = query.lower().strip()
     results = []
     
     for movie in movies:
         title = movie[1].lower()
         distance = levenshtein_distance(query, title)
-        results.append((movie, distance))
+        results.append((movie, distance, query in title))
     
-    # Distance ke hisaab se sort karo (kam distance = better)
-    results.sort(key=lambda x: x[1])
+    # Pehle substring matches ("bat" -> "Batman"), phir kam distance wale
+    results.sort(key=lambda x: (not x[2], x[1]))
     
     return results[:max_results]
 
@@ -90,8 +90,8 @@ def main():
         print(f"\n🔎 Results for '{user_input}':")
         print("-" * 60)
         
-        for i, (movie, distance) in enumerate(results, 1):
-            movie_id, title, year, genre, rating = movie
+        for i, (movie, distance, _) in enumerate(results, 1):
+            movie_id, title, year, genre, rating, plot, poster = movie
             print(f"{i}. {title} ({year})")
             print(f"   Genre: {genre}")
             print(f"   Rating: {rating}")

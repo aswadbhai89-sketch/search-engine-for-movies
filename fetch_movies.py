@@ -1,7 +1,6 @@
 import sqlite3
 import requests
 import time
-import os
 
 # ============================================================
 # DATABASE BANAO
@@ -35,10 +34,10 @@ def create_database():
 
 def fetch_movie(title, api_key):
     """OMDB se ek movie ki details lo"""
-    url = f"http://www.omdbapi.com/?t={title}&apikey={api_key}"
+    url = "http://www.omdbapi.com/"
     
     try:
-        response = requests.get(url)
+        response = requests.get(url, params={"t": title, "apikey": api_key}, timeout=10)
         data = response.json()
         
         if data.get('Response') == 'True':
@@ -88,9 +87,7 @@ def save_movie(movie_data):
 # ============================================================
 
 def main():
-    API_KEY = os.environ.get("OMDB_API_KEY")
-    if not API_KEY:
-        raise SystemExit("Set OMDB_API_KEY environment variable first (see README).")
+    API_KEY = "69f58f62"
     
     create_database()
     

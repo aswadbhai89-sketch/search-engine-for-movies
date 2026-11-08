@@ -11,11 +11,7 @@ python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\act
 pip install -r requirements.txt
 ```
 
-Get a free key at https://www.omdbapi.com/apikey.aspx, then set it:
-
-```bash
-export OMDB_API_KEY=your_key      # Windows PowerShell: $env:OMDB_API_KEY="your_key"
-```
+The OMDb API key is set in `app.py` and `fetch_movies.py`. To use your own, get a free key at https://www.omdbapi.com/apikey.aspx and replace it.
 
 ## Run
 
@@ -36,7 +32,6 @@ python fuzzy_search.py      # command-line version
 
 ## Team workflow
 
-- Never commit API keys (use `OMDB_API_KEY`).
 - Work on a branch, open a pull request, have your teammate review it:
   `git checkout -b feature/my-change`
 - `git pull` before you start working.
