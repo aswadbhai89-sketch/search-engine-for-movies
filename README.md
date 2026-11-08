@@ -6,7 +6,7 @@ A movie search app that tolerates typos ("Titanik" → "Titanic") using Levensht
 
 ```bash
 git clone <repo-url>
-cd fuzzy-movie-search
+cd search-engine-for-movies
 python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```

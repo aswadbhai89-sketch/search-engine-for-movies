@@ -61,7 +61,7 @@ def save_movie(movie_data):
     
     try:
         rating = float(movie_data.get('imdbRating', 0))
-    except:
+    except (TypeError, ValueError):
         rating = 0.0
     
     cursor.execute('''
