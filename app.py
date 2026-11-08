@@ -90,19 +90,21 @@ def levenshtein_distance(s1, s2):
 def init_db():
     """Table na ho to bana do (movies.db missing ho tab bhi app crash na ho)"""
     conn = sqlite3.connect('movies.db')
-    conn.execute('''
-        CREATE TABLE IF NOT EXISTS movies (
-            id TEXT PRIMARY KEY,
-            title TEXT,
-            year TEXT,
-            genre TEXT,
-            rating REAL,
-            plot TEXT,
-            poster TEXT
-        )
-    ''')
-    conn.commit()
-    conn.close()
+    try:
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS movies (
+                id TEXT PRIMARY KEY,
+                title TEXT,
+                year TEXT,
+                genre TEXT,
+                rating REAL,
+                plot TEXT,
+                poster TEXT
+            )
+        ''')
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def get_all_movies():
@@ -110,45 +112,45 @@ def get_all_movies():
     try:
         init_db()
         conn = sqlite3.connect('movies.db')
-        cursor = conn.cursor()
-        cursor.execute('SELECT * FROM movies')
-        movies = cursor.fetchall()
-        conn.close()
-        return movies
+        try:
+            return conn.execute('SELECT * FROM movies').fetchall()
+        finally:
+            conn.close()
     except sqlite3.Error:
         return []
 
 
 def add_movie_to_db(movie_data):
     """Nayi movie database mein add karo"""
-    conn = sqlite3.connect('movies.db')
-    cursor = conn.cursor()
+    init_db()
     
     try:
         rating = float(movie_data.get('imdbRating', 0))
-    except:
+    except (TypeError, ValueError):
         rating = 0.0
     
-    cursor.execute('''
-        INSERT OR REPLACE INTO movies (id, title, year, genre, rating, plot, poster)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-    ''', (
-        movie_data.get('imdbID'),
-        movie_data.get('Title'),
-        movie_data.get('Year'),
-        movie_data.get('Genre'),
-        rating,
-        movie_data.get('Plot'),
-        movie_data.get('Poster')
-    ))
-    
-    conn.commit()
-    conn.close()
+    conn = sqlite3.connect('movies.db')
+    try:
+        conn.execute('''
+            INSERT OR REPLACE INTO movies (id, title, year, genre, rating, plot, poster)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            movie_data.get('imdbID'),
+            movie_data.get('Title'),
+            movie_data.get('Year'),
+            movie_data.get('Genre'),
+            rating,
+            movie_data.get('Plot'),
+            movie_data.get('Poster')
+        ))
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def fetch_from_omdb(title, api_key):
     """OMDB se movie fetch karo"""
-    url = "http://www.omdbapi.com/"
+    url = "https://www.omdbapi.com/"
     
     try:
         response = requests.get(url, params={"t": title, "apikey": api_key}, timeout=10)
@@ -157,7 +159,19 @@ def fetch_from_omdb(title, api_key):
         if data.get('Response') == 'True':
             return data
         return None
-    except:
+    except (requests.RequestException, ValueError):
+        return None
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def fetch_poster(url):
+    """Poster download karo (cached - har rerun par dobara download nahi hoga)"""
+    try:
+        response = requests.get(url, timeout=5)
+        response.raise_for_status()
+        Image.open(BytesIO(response.content)).verify()  # valid image hai ya nahi
+        return response.content
+    except Exception:
         return None
 
 
@@ -300,15 +314,8 @@ def main():
             
             with col1:
                 # Poster
-                if poster and poster != 'N/A':
-                    try:
-                        response = requests.get(poster, timeout=5)
-                        img = Image.open(BytesIO(response.content))
-                        st.image(img, width=150)
-                    except:
-                        st.image(placeholder_image(), width=150)
-                else:
-                    st.image(placeholder_image(), width=150)
+                poster_data = fetch_poster(poster) if poster and poster != 'N/A' else None
+                st.image(poster_data or placeholder_image(), width=150)
             
             with col2:
                 # Movie info
@@ -336,13 +343,9 @@ def main():
             with [col1, col2, col3][i % 3]:
                 movie_id, title, year, genre, rating, plot, poster = movie
                 
-                if poster and poster != 'N/A':
-                    try:
-                        response = requests.get(poster, timeout=5)
-                        img = Image.open(BytesIO(response.content))
-                        st.image(img, use_container_width=True)
-                    except:
-                        pass
+                poster_data = fetch_poster(poster) if poster and poster != 'N/A' else None
+                if poster_data:
+                    st.image(poster_data, use_container_width=True)
                 
                 st.markdown(f"**{title}** ({year})")
                 st.markdown(f"⭐ {rating}/10")

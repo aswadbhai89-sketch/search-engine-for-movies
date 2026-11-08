@@ -36,3 +36,7 @@ python fuzzy_search.py      # command-line version
   `git checkout -b feature/my-change`
 - `git pull` before you start working.
 - `movies.db` is binary and can't be merged — agree on who changes it, or regenerate it with `fetch_movies.py`.
+
+## Deploying (e.g. Streamlit Community Cloud)
+
+`movies.db` ships with the repo, so the app starts with the sample movies. Movies added through the app are written to the server's local disk and can be lost when the app restarts or redeploys. For permanent data, commit the updated `movies.db` or move to a hosted database.

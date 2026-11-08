@@ -34,7 +34,7 @@ def create_database():
 
 def fetch_movie(title, api_key):
     """OMDB se ek movie ki details lo"""
-    url = "http://www.omdbapi.com/"
+    url = "https://www.omdbapi.com/"
     
     try:
         response = requests.get(url, params={"t": title, "apikey": api_key}, timeout=10)

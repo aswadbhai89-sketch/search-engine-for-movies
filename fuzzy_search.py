@@ -1,4 +1,6 @@
+import os
 import sqlite3
+import sys
 
 # ============================================================
 # LEVENSHTEIN DISTANCE (Typo Correction)
@@ -33,14 +35,16 @@ def levenshtein_distance(s1, s2):
 
 def get_all_movies():
     """Database ki saari movies nikaalo"""
+    if not os.path.exists('movies.db'):
+        sys.exit("❌ movies.db nahi mili. Pehle 'python setup_db.py' aur 'python fetch_movies.py' chalao.")
+    
     conn = sqlite3.connect('movies.db')
-    cursor = conn.cursor()
-    
-    cursor.execute('SELECT * FROM movies')
-    movies = cursor.fetchall()
-    
-    conn.close()
-    return movies
+    try:
+        return conn.execute('SELECT * FROM movies').fetchall()
+    except sqlite3.OperationalError:
+        sys.exit("❌ movies table nahi mili. Pehle 'python setup_db.py' chalao.")
+    finally:
+        conn.close()
 
 
 # ============================================================
