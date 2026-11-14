@@ -6,6 +6,8 @@ import time
 from PIL import Image, ImageDraw
 from io import BytesIO
 
+from inverted_index import build_inverted_index, get_movies_dict, search_with_index
+
 # ============================================================
 # PAGE CONFIG
 # ============================================================
@@ -190,8 +192,8 @@ def placeholder_image(width=150, height=220):
 # SEARCH FUNCTION
 # ============================================================
 
-def fuzzy_search(query, movies, max_results=10):
-    """Fuzzy search karo (typos + substring, jaise 'bat' -> 'Batman')"""
+def fuzzy_scan(query, movies, max_results=10):
+    """Saari movies par Levenshtein scan (typos + substring, jaise 'bat' -> 'Batman')"""
     query = query.lower().strip()
     results = []
     
@@ -216,6 +218,39 @@ def fuzzy_search(query, movies, max_results=10):
     results.sort(key=lambda x: (not x['substring'], x['distance']))
     
     return results[:max_results]
+
+
+@st.cache_data(show_spinner=False)
+def get_search_index():
+    """Index ek baar banao aur cache karo (movie add hone par clear hota hai)"""
+    return build_inverted_index(), get_movies_dict()
+
+
+def fuzzy_search(query, movies, max_results=10):
+    """Pehle inverted index (fast), kuch na mile to fuzzy scan (typos ke liye)"""
+    try:
+        index, movies_dict = get_search_index()
+        index_movies = search_with_index(query, index, movies_dict, max_results)
+    except Exception:
+        index_movies = None
+    
+    if index_movies is None:
+        return fuzzy_scan(query, movies, max_results)
+    
+    q = query.lower().strip()
+    results = []
+    for movie in index_movies:
+        title = movie[1].lower()
+        distance = levenshtein_distance(q, title)
+        max_len = max(len(q), len(title))
+        similarity = ((max_len - distance) / max_len) * 100 if max_len > 0 else 0
+        results.append({
+            'movie': movie,
+            'distance': distance,
+            'similarity': similarity,
+            'substring': q in title
+        })
+    return results  # index ka order (zyada words match = upar) rakho
 
 
 # ============================================================
@@ -253,6 +288,7 @@ def main():
                     
                     if movie_data:
                         add_movie_to_db(movie_data)
+                        get_search_index.clear()  # naya movie index mein aaye
                         st.success(f"✅ Added: {movie_data.get('Title')}")
                         time.sleep(1)
                         st.rerun()
