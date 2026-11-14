@@ -36,13 +36,13 @@ def levenshtein_distance(s1, s2):
 def get_all_movies():
     """Database ki saari movies nikaalo"""
     if not os.path.exists('movies.db'):
-        sys.exit("❌ movies.db nahi mili. Pehle 'python setup_db.py' aur 'python fetch_movies.py' chalao.")
+        sys.exit("❌ movies.db not found. Run 'python setup_db.py' and 'python fetch_movies.py' first.")
     
     conn = sqlite3.connect('movies.db')
     try:
         return conn.execute('SELECT * FROM movies').fetchall()
     except sqlite3.OperationalError:
-        sys.exit("❌ movies table nahi mili. Pehle 'python setup_db.py' chalao.")
+        sys.exit("❌ The movies table is missing. Run 'python setup_db.py' first.")
     finally:
         conn.close()
 
@@ -77,14 +77,14 @@ def fuzzy_search(query, movies, max_results=5):
 def main():
     # Database se saari movies nikaalo
     movies = get_all_movies()
-    print(f"📊 Database mein {len(movies)} movies hain\n")
+    print(f"📊 {len(movies)} movies in the database\n")
     
     while True:
         # User se input lo
-        user_input = input("🔍 Movie ka naam type karo (ya 'exit' likho): ")
+        user_input = input("🔍 Enter a movie title (or 'exit' to quit): ")
         
         if user_input.lower() == 'exit':
-            print("👋 Alvida!")
+            print("👋 Goodbye!")
             break
         
         # Fuzzy search karo

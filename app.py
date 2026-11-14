@@ -1,15 +1,16 @@
-
-import streamlit as st
-import sqlite3
-import requests
 import base64
 import html
+import sqlite3
 import time
-from urllib.parse import quote
-from PIL import Image
 from io import BytesIO
+from urllib.parse import quote
 
-from inverted_index import build_inverted_index, get_movies_dict, search_with_index
+import requests
+import streamlit as st
+from PIL import Image
+
+from inverted_index import build_inverted_index, get_movies_dict, load_movies
+from ngram_index import build_ngram_index, search_hybrid
 
 # ============================================================
 # PAGE CONFIG
@@ -18,11 +19,12 @@ from inverted_index import build_inverted_index, get_movies_dict, search_with_in
 st.set_page_config(
     page_title="Fuzzy Movie Search",
     page_icon="🎬",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="collapsed",
 )
 
 # ============================================================
-# CUSTOM CSS (Styling)
+# STYLES
 # ============================================================
 
 st.markdown("""
@@ -35,17 +37,17 @@ st.markdown("""
             #0b0b14;
     }
     header[data-testid="stHeader"] { background: transparent; }
-    .block-container { padding-top: 2rem; max-width: 1100px; }
+    .block-container { padding-top: 2.2rem; max-width: 1000px; }
     #MainMenu, footer { visibility: hidden; }
 
     /* ---------- hero ---------- */
-    .hero { text-align: center; padding: 1.5rem 0 0.5rem; }
+    .hero { text-align: center; padding: 1.2rem 0 1.2rem; }
     .hero h1 {
-        font-size: 3.2rem; font-weight: 800; margin: 0; letter-spacing: -1px;
+        font-size: 3.1rem; font-weight: 800; margin: 0; letter-spacing: -1px;
         background: linear-gradient(90deg, #ff4b5c, #ff9a5c 45%, #9b7bff);
         -webkit-background-clip: text; background-clip: text; color: transparent;
     }
-    .hero p { color: #9a9ab0; font-size: 1.05rem; margin: 0.4rem 0 0; }
+    .hero p { color: #9a9ab0; font-size: 1.05rem; margin: 0.5rem 0 0; }
 
     /* ---------- search box ---------- */
     div[data-testid="stTextInput"] div[data-baseweb="input"] {
@@ -72,45 +74,51 @@ st.markdown("""
 
     /* ---------- result cards ---------- */
     .card {
-        display: flex; gap: 1.4rem; padding: 1.1rem; margin: 0 0 1rem;
+        display: flex; gap: 1.3rem; padding: 1.1rem; margin: 0 0 1rem;
         background: linear-gradient(145deg, rgba(255,255,255,0.07), rgba(255,255,255,0.02));
         border: 1px solid rgba(255, 255, 255, 0.09); border-radius: 18px;
-        backdrop-filter: blur(6px); transition: transform .2s, border-color .2s, box-shadow .2s;
+        transition: transform .2s, border-color .2s, box-shadow .2s;
     }
     .card:hover {
         transform: translateY(-3px); border-color: rgba(255, 75, 92, 0.55);
         box-shadow: 0 12px 34px rgba(255, 75, 92, 0.15);
     }
     .card img.poster {
-        width: 130px; height: 190px; object-fit: cover; border-radius: 12px; flex-shrink: 0;
+        width: 120px; height: 180px; object-fit: cover; border-radius: 12px; flex-shrink: 0;
         box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
     }
-    .card .body { flex: 1; min-width: 0; }
-    .card .title { margin: 0; font-size: 1.45rem; font-weight: 700; color: #ffffff; line-height: 1.25; }
-    .card .title span { color: #8b8ba3; font-weight: 400; font-size: 1.05rem; }
-    .chips { margin: 0.55rem 0; display: flex; flex-wrap: wrap; gap: 0.4rem; }
+    .card .body { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+    .card .top { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; }
+    .card .title { font-size: 1.4rem; font-weight: 700; color: #ffffff; line-height: 1.25; }
+    .card .title span { color: #8b8ba3; font-weight: 400; font-size: 1rem; }
+    .card .score {
+        flex-shrink: 0; font-weight: 700; color: #ffd166; font-size: 0.95rem;
+        background: rgba(255, 209, 102, 0.12); border-radius: 999px; padding: 0.2rem 0.7rem;
+    }
+    .chips { margin: 0.55rem 0 0.45rem; display: flex; flex-wrap: wrap; gap: 0.4rem; }
     .chip {
-        font-size: 0.75rem; padding: 0.18rem 0.65rem; border-radius: 999px;
+        font-size: 0.74rem; padding: 0.16rem 0.65rem; border-radius: 999px;
         background: rgba(155, 123, 255, 0.16); color: #c7b8ff; border: 1px solid rgba(155, 123, 255, 0.3);
     }
-    .rating { color: #ffd166; font-weight: 700; font-size: 1.05rem; }
-    .badge {
-        display: inline-block; font-size: 0.7rem; font-weight: 700; letter-spacing: .6px;
-        padding: 0.18rem 0.6rem; border-radius: 6px; margin-right: 0.4rem; text-transform: uppercase;
+    .plot {
+        color: #b4b4c6; font-size: 0.92rem; line-height: 1.5; margin: 0 0 0.7rem;
+        display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
     }
-    .badge.exact { background: rgba(46, 213, 115, .16); color: #2ed573; }
-    .badge.partial { background: rgba(255, 193, 7, .16); color: #ffc107; }
-    .badge.fuzzy { background: rgba(255, 140, 66, .16); color: #ff8c42; }
-    .badge.low { background: rgba(160, 160, 180, .14); color: #a0a0b4; }
-    .badge.method { background: rgba(86, 156, 255, .16); color: #6aa8ff; }
-    .bar { height: 6px; border-radius: 6px; background: rgba(255,255,255,0.08); margin: 0.7rem 0 0.2rem; overflow: hidden; }
+    .foot { margin-top: auto; display: flex; align-items: center; gap: 0.8rem; }
+    .badge {
+        font-size: 0.68rem; font-weight: 700; letter-spacing: .6px; text-transform: uppercase;
+        padding: 0.2rem 0.6rem; border-radius: 6px; white-space: nowrap;
+    }
+    .badge.k-exact { background: rgba(46, 213, 115, .16); color: #2ed573; }
+    .badge.k-title { background: rgba(86, 156, 255, .16); color: #6aa8ff; }
+    .badge.k-genre { background: rgba(155, 123, 255, .16); color: #b8a3ff; }
+    .badge.k-typo  { background: rgba(255, 140, 66, .16); color: #ff9a5c; }
+    .bar { flex: 1; height: 6px; border-radius: 6px; background: rgba(255,255,255,0.08); overflow: hidden; }
     .bar > div { height: 100%; background: linear-gradient(90deg, #ff4b5c, #9b7bff); border-radius: 6px; }
-    .meta { color: #8b8ba3; font-size: 0.78rem; }
-    details { margin-top: 0.5rem; color: #c4c4d4; font-size: 0.92rem; }
-    details summary { cursor: pointer; color: #ff7a85; font-weight: 600; }
+    .pct { color: #8b8ba3; font-size: 0.8rem; min-width: 2.6rem; text-align: right; }
 
     /* ---------- poster grid (home) ---------- */
-    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 1rem; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 1rem; }
     .tile {
         position: relative; border-radius: 14px; overflow: hidden; aspect-ratio: 2 / 3;
         border: 1px solid rgba(255,255,255,0.09); transition: transform .2s, box-shadow .2s;
@@ -118,49 +126,44 @@ st.markdown("""
     .tile:hover { transform: translateY(-5px) scale(1.02); box-shadow: 0 14px 30px rgba(0,0,0,.6); }
     .tile img { width: 100%; height: 100%; object-fit: cover; display: block; }
     .tile .cap {
-        position: absolute; inset: auto 0 0 0; padding: 2.2rem 0.7rem 0.6rem;
+        position: absolute; inset: auto 0 0 0; padding: 2.4rem 0.7rem 0.65rem;
         background: linear-gradient(transparent, rgba(0,0,0,.92)); font-size: 0.85rem; font-weight: 600;
     }
     .tile .cap small { display: block; color: #ffd166; font-weight: 700; }
-    .section-title { font-size: 1.25rem; font-weight: 700; margin: 1.8rem 0 0.8rem; color: #fff; }
-    .empty { text-align: center; color: #8b8ba3; padding: 2rem; }
 
-    /* ---------- sidebar ---------- */
+    /* ---------- misc ---------- */
+    .section-title { font-size: 1.2rem; font-weight: 700; margin: 1.6rem 0 0.2rem; color: #fff; }
+    .section-sub { color: #8b8ba3; font-size: 0.85rem; margin: 0 0 1rem; }
+    .empty {
+        text-align: center; color: #9a9ab0; padding: 2.5rem 1rem; margin-top: 1rem;
+        border: 1px dashed rgba(255,255,255,0.14); border-radius: 18px;
+    }
+    .empty b { color: #fff; font-size: 1.1rem; display: block; margin-bottom: 0.3rem; }
     section[data-testid="stSidebar"] { background: #10101a; border-right: 1px solid rgba(255,255,255,.06); }
+
+    @media (max-width: 640px) {
+        div[data-testid="stHorizontalBlock"] { flex-direction: row !important; flex-wrap: wrap; gap: 0.5rem !important; }
+        div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {
+            min-width: 0 !important; width: auto !important; flex: 0 0 auto !important;
+        }
+        .hero h1 { font-size: 2.2rem; }
+        .card { gap: 0.9rem; padding: 0.8rem; }
+        .card img.poster { width: 84px; height: 126px; }
+        .card .title { font-size: 1.15rem; }
+        .plot { -webkit-line-clamp: 4; font-size: 0.85rem; }
+        .foot { flex-wrap: wrap; gap: 0.5rem; }
+        .grid { grid-template-columns: repeat(2, 1fr); }
+    }
 </style>
 """, unsafe_allow_html=True)
 
 
 # ============================================================
-# LEVENSHTEIN DISTANCE
-# ============================================================
-
-def levenshtein_distance(s1, s2):
-    """Do strings ke beech kitne characters different hain"""
-    m, n = len(s1), len(s2)
-    dp = [[0] * (n + 1) for _ in range(m + 1)]
-    
-    for i in range(m + 1):
-        dp[i][0] = i
-    for j in range(n + 1):
-        dp[0][j] = j
-    
-    for i in range(1, m + 1):
-        for j in range(1, n + 1):
-            if s1[i-1] == s2[j-1]:
-                dp[i][j] = dp[i-1][j-1]
-            else:
-                dp[i][j] = 1 + min(dp[i-1][j], dp[i][j-1], dp[i-1][j-1])
-    
-    return dp[m][n]
-
-
-# ============================================================
-# DATABASE FUNCTIONS
+# DATABASE
 # ============================================================
 
 def init_db():
-    """Table na ho to bana do (movies.db missing ho tab bhi app crash na ho)"""
+    """Create the movies table if it does not exist yet."""
     conn = sqlite3.connect('movies.db')
     try:
         conn.execute('''
@@ -180,27 +183,23 @@ def init_db():
 
 
 def get_all_movies():
-    """Database ki saari movies nikaalo"""
+    """Return every movie as (id, title, year, genre, rating, plot, poster)."""
     try:
         init_db()
-        conn = sqlite3.connect('movies.db')
-        try:
-            return conn.execute('SELECT * FROM movies').fetchall()
-        finally:
-            conn.close()
+        return load_movies()
     except sqlite3.Error:
         return []
 
 
 def add_movie_to_db(movie_data):
-    """Nayi movie database mein add karo"""
+    """Insert (or update) a movie fetched from OMDb."""
     init_db()
-    
+
     try:
         rating = float(movie_data.get('imdbRating', 0))
     except (TypeError, ValueError):
         rating = 0.0
-    
+
     conn = sqlite3.connect('movies.db')
     try:
         conn.execute('''
@@ -221,115 +220,22 @@ def add_movie_to_db(movie_data):
 
 
 def fetch_from_omdb(title, api_key):
-    """OMDB se movie fetch karo"""
-    url = "https://www.omdbapi.com/"
-    
+    """Look a movie up on OMDb. Returns the JSON dict or None."""
     try:
-        response = requests.get(url, params={"t": title, "apikey": api_key}, timeout=10)
+        response = requests.get(
+            "https://www.omdbapi.com/",
+            params={"t": title, "apikey": api_key},
+            timeout=10,
+        )
         data = response.json()
-        
-        if data.get('Response') == 'True':
-            return data
-        return None
+        return data if data.get('Response') == 'True' else None
     except (requests.RequestException, ValueError):
         return None
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
-def fetch_poster(url):
-    """Poster download karo (cached - har rerun par dobara download nahi hoga)"""
-    try:
-        response = requests.get(url, timeout=5)
-        response.raise_for_status()
-        Image.open(BytesIO(response.content)).verify()  # valid image hai ya nahi
-        return response.content
-    except Exception:
-        return None
-
-
 # ============================================================
-# SEARCH FUNCTION
+# POSTERS
 # ============================================================
-
-def fuzzy_scan(query, movies, max_results=10):
-    """Saari movies par Levenshtein scan (typos + substring, jaise 'bat' -> 'Batman')"""
-    query = query.lower().strip()
-    results = []
-    
-    for movie in movies:
-        # movie tuple: (id, title, year, genre, rating, plot, poster)
-        title = movie[1].lower()
-        distance = levenshtein_distance(query, title)
-        is_substring = query in title
-        
-        # Similarity score calculate karo (0-100%)
-        max_len = max(len(query), len(title))
-        similarity = ((max_len - distance) / max_len) * 100 if max_len > 0 else 0
-        
-        results.append({
-            'movie': movie,
-            'distance': distance,
-            'similarity': similarity,
-            'substring': is_substring,
-            'method': 'fuzzy'
-        })
-    
-    # Pehle substring matches, phir kam distance wale
-    results.sort(key=lambda x: (not x['substring'], x['distance']))
-    
-    return results[:max_results]
-
-
-@st.cache_data(show_spinner=False)
-def get_search_index():
-    """Index ek baar banao aur cache karo (movie add hone par clear hota hai)"""
-    return build_inverted_index(), get_movies_dict()
-
-
-def fuzzy_search(query, movies, max_results=10):
-    """Pehle inverted index (fast), kuch na mile to fuzzy scan (typos ke liye)"""
-    try:
-        index, movies_dict = get_search_index()
-        index_movies = search_with_index(query, index, movies_dict, max_results)
-    except Exception:
-        index_movies = None
-    
-    if index_movies is None:
-        return fuzzy_scan(query, movies, max_results)
-    
-    q = query.lower().strip()
-    results = []
-    for movie in index_movies:
-        title = movie[1].lower()
-        distance = levenshtein_distance(q, title)
-        max_len = max(len(q), len(title))
-        similarity = ((max_len - distance) / max_len) * 100 if max_len > 0 else 0
-        results.append({
-            'movie': movie,
-            'distance': distance,
-            'similarity': similarity,
-            'substring': q in title,
-            'method': 'index'
-        })
-    return results  # index ka order (zyada words match = upar) rakho
-
-
-# ============================================================
-# UI HELPERS
-# ============================================================
-
-EXAMPLE_QUERIES = ["Titanik", "Batmn", "Incepton", "dark knight", "crime"]
-
-
-@st.cache_data(show_spinner=False)
-def poster_src(url):
-    """Poster ko data-URI bana do (HTML card mein embed karne ke liye)"""
-    data = fetch_poster(url) if url and url != 'N/A' else None
-    if data:
-        fmt = (Image.open(BytesIO(data)).format or "JPEG").lower()
-        return f"data:image/{fmt};base64,{base64.b64encode(data).decode()}"
-    return PLACEHOLDER_SVG
-
 
 PLACEHOLDER_SVG = "data:image/svg+xml;utf8," + quote(
     '<svg xmlns="http://www.w3.org/2000/svg" width="260" height="380">'
@@ -338,52 +244,131 @@ PLACEHOLDER_SVG = "data:image/svg+xml;utf8," + quote(
     '<rect width="260" height="380" fill="url(#g)"/>'
     '<text x="130" y="185" font-size="64" text-anchor="middle">🎬</text>'
     '<text x="130" y="235" font-size="18" fill="#8b8ba3" text-anchor="middle" '
-    'font-family="sans-serif">No Poster</text></svg>'
+    'font-family="sans-serif">No poster</text></svg>'
 )
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def fetch_poster(url):
+    """Download a poster once and cache it. Returns bytes or None."""
+    try:
+        response = requests.get(url, timeout=5)
+        response.raise_for_status()
+        Image.open(BytesIO(response.content)).verify()  # make sure it is a real image
+        return response.content
+    except Exception:
+        return None
+
+
+@st.cache_data(show_spinner=False)
+def poster_src(url):
+    """Return the poster as a data URI (or a placeholder) for embedding in HTML."""
+    data = fetch_poster(url) if url and url != 'N/A' else None
+    if data:
+        fmt = (Image.open(BytesIO(data)).format or "JPEG").lower()
+        return f"data:image/{fmt};base64,{base64.b64encode(data).decode()}"
+    return PLACEHOLDER_SVG
+
+
+# ============================================================
+# SEARCH
+# ============================================================
+
+def levenshtein_distance(s1, s2):
+    """Number of single-character edits needed to turn s1 into s2."""
+    m, n = len(s1), len(s2)
+    dp = [[0] * (n + 1) for _ in range(m + 1)]
+
+    for i in range(m + 1):
+        dp[i][0] = i
+    for j in range(n + 1):
+        dp[0][j] = j
+
+    for i in range(1, m + 1):
+        for j in range(1, n + 1):
+            if s1[i-1] == s2[j-1]:
+                dp[i][j] = dp[i-1][j-1]
+            else:
+                dp[i][j] = 1 + min(dp[i-1][j], dp[i][j-1], dp[i-1][j-1])
+
+    return dp[m][n]
+
+
+@st.cache_resource(show_spinner=False)
+def get_indexes():
+    """Build the word and n-gram indexes once; cleared whenever a movie is added."""
+    movies = load_movies()
+    return (
+        build_inverted_index(movies=movies),
+        build_ngram_index(movies=movies),
+        get_movies_dict(movies=movies),
+    )
+
+
+def levenshtein_scan(query, movies, max_results=10, min_similarity=40):
+    """Last-resort scan over every title using edit distance."""
+    q = query.lower().strip()
+    results = []
+    for movie in movies:
+        title = movie[1].lower()
+        max_len = max(len(q), len(title))
+        similarity = (1 - levenshtein_distance(q, title) / max_len) * 100 if max_len else 0
+        if similarity >= min_similarity:
+            results.append({'movie': movie, 'similarity': similarity, 'kind': 'typo'})
+    results.sort(key=lambda r: -r['similarity'])
+    return results[:max_results]
+
+
+def search_movies(query, movies, max_results=10):
+    """Hybrid index search first; edit-distance scan only if the indexes find nothing."""
+    try:
+        word_index, ngram_index, movies_dict = get_indexes()
+        results = search_hybrid(query, word_index, ngram_index, movies_dict, max_results=max_results)
+    except Exception:
+        results = []
+    return results or levenshtein_scan(query, movies, max_results)
+
+
+# ============================================================
+# UI HELPERS
+# ============================================================
+
+EXAMPLE_QUERIES = ["Titanik", "Batmn", "Incepton", "dark knigt", "crime"]
+KIND_LABELS = {"exact": "Exact match", "title": "Title match", "genre": "Genre match", "typo": "Closest match"}
 
 
 def set_query(value):
     st.session_state["query"] = value
 
 
-def match_info(result):
-    """(label, css class) - kis tarah ka match hai"""
-    if result['distance'] == 0:
-        return "Exact match", "exact"
-    if result['substring']:
-        return "Partial match", "partial"
-    if result['distance'] <= 3:
-        return "Fuzzy match", "fuzzy"
-    return "Low match", "low"
-
-
 def render_card(result):
-    movie_id, title, year, genre, rating, plot, poster = result['movie']
-    label, css = match_info(result)
-    method = "⚡ Index" if result.get('method') == 'index' else "🔤 Fuzzy scan"
-    
+    _, title, year, genre, rating, plot, poster = result['movie']
+    kind = result['kind']
+
     chips = "".join(
         f'<span class="chip">{html.escape(g.strip())}</span>'
         for g in (genre or "").split(",") if g.strip() and g.strip() != 'N/A'
     )
-    rating_txt = f"⭐ {rating:.1f}/10" if rating else "⭐ N/A"
-    plot_txt = plot if plot and plot != 'N/A' else "Plot not available"
-    similarity = max(0, min(100, result['similarity']))
-    
+    score = f'<div class="score">★ {rating:.1f}</div>' if rating else ""
+    plot_txt = plot if plot and plot != 'N/A' else "No plot summary available."
+
+    # A percentage only makes sense when the title itself was compared
+    meter = ""
+    if kind in ("typo", "title"):
+        pct = max(0, min(100, result['similarity']))
+        meter = f'<div class="bar"><div style="width:{pct:.0f}%"></div></div><span class="pct">{pct:.0f}%</span>'
+
     return f"""
     <div class="card">
-        <img class="poster" src="{poster_src(poster)}" alt="">
+        <img class="poster" src="{poster_src(poster)}" alt="Poster of {html.escape(str(title))}">
         <div class="body">
-            <div class="title">{html.escape(str(title))} <span>({html.escape(str(year))})</span></div>
-            <div class="chips">{chips}</div>
-            <div><span class="rating">{rating_txt}</span></div>
-            <div class="bar"><div style="width:{similarity:.0f}%"></div></div>
-            <div style="margin-top:.4rem">
-                <span class="badge {css}">{label}</span>
-                <span class="badge method">{method}</span>
-                <span class="meta">distance {result['distance']} · similarity {similarity:.0f}%</span>
+            <div class="top">
+                <div class="title">{html.escape(str(title))} <span>({html.escape(str(year))})</span></div>
+                {score}
             </div>
-            <details><summary>Plot</summary>{html.escape(plot_txt)}</details>
+            <div class="chips">{chips}</div>
+            <p class="plot">{html.escape(plot_txt)}</p>
+            <div class="foot"><span class="badge k-{kind}">{KIND_LABELS[kind]}</span>{meter}</div>
         </div>
     </div>
     """
@@ -393,10 +378,10 @@ def render_grid(movies):
     tiles = ""
     for movie in movies:
         title, year, rating, poster = movie[1], movie[2], movie[4], movie[6]
-        rating_txt = f"⭐ {rating:.1f}" if rating else ""
+        rating_txt = f"★ {rating:.1f} · " if rating else ""
         tiles += (
             f'<div class="tile"><img src="{poster_src(poster)}" alt="">'
-            f'<div class="cap">{html.escape(str(title))}<small>{rating_txt} · {html.escape(str(year))}</small></div></div>'
+            f'<div class="cap">{html.escape(str(title))}<small>{rating_txt}{html.escape(str(year))}</small></div></div>'
         )
     return f'<div class="grid">{tiles}</div>'
 
@@ -407,81 +392,95 @@ def render_grid(movies):
 
 def main():
     movies = get_all_movies()
-    api_key = "69f58f62"  # Tumhari API key
-    
+    api_key = "69f58f62"
+
     # ---------- sidebar ----------
     with st.sidebar:
-        st.header("➕ Add New Movie")
-        new_movie = st.text_input("Movie ka naam:", key="new_movie")
-        
-        if st.button("Add Movie", use_container_width=True):
-            if new_movie:
-                with st.spinner("Fetching from OMDB..."):
-                    movie_data = fetch_from_omdb(new_movie, api_key)
-                    
-                    if movie_data:
-                        add_movie_to_db(movie_data)
-                        get_search_index.clear()  # naya movie index mein aaye
-                        st.success(f"✅ Added: {movie_data.get('Title')}")
-                        time.sleep(1)
-                        st.rerun()
-                    else:
-                        st.error("❌ Movie not found!")
+        st.header("Add a movie")
+        new_movie = st.text_input("Movie title", key="new_movie", placeholder="e.g. Parasite")
+
+        if st.button("Add movie", use_container_width=True):
+            if not new_movie.strip():
+                st.warning("Enter a movie title first.")
             else:
-                st.warning("Please enter a movie name")
-        
-        st.markdown("---")
-        st.header("📊 Stats")
-        st.metric("Total Movies", len(movies))
-        try:
-            st.metric("Index words", len(get_search_index()[0]))
-        except Exception:
-            pass
-        
-        st.markdown("---")
-        st.caption("Typos handle hote hain: Titanik → Titanic, Batmn → Batman, Incepton → Inception")
-    
-    # ---------- hero ----------
+                with st.spinner("Looking it up on OMDb…"):
+                    movie_data = fetch_from_omdb(new_movie, api_key)
+
+                if movie_data:
+                    add_movie_to_db(movie_data)
+                    get_indexes.clear()  # make the new movie searchable
+                    st.success(f"Added “{movie_data.get('Title')}”")
+                    time.sleep(1)
+                    st.rerun()
+                else:
+                    st.error("Movie not found.")
+
+        st.divider()
+        st.metric("Movies in collection", len(movies))
+        st.caption("Typo-tolerant search powered by a word index and character n-grams.")
+
+    # ---------- hero + search ----------
     st.markdown(
         '<div class="hero"><h1>🎬 Fuzzy Movie Search</h1>'
-        '<p>Typos ki fikar mat karo — inverted index + fuzzy matching dhoond hi lega.</p></div>',
-        unsafe_allow_html=True
+        '<p>Find any movie, even when you can’t spell it.</p></div>',
+        unsafe_allow_html=True,
     )
-    
-    search_query = st.text_input(
+
+    query = st.text_input(
         "Search",
         key="query",
-        placeholder="🔍  Try: Titanik, Batmn, dark knight, crime…",
-        label_visibility="collapsed"
+        placeholder="Search for a movie or genre…",
+        label_visibility="collapsed",
     )
-    
+
     chip_cols = st.columns(len(EXAMPLE_QUERIES))
     for col, example in zip(chip_cols, EXAMPLE_QUERIES):
         col.button(example, key=f"ex_{example}", on_click=set_query, args=(example,), use_container_width=True)
-    
+
     # ---------- results ----------
-    if search_query.strip():
-        results = fuzzy_search(search_query, movies)
-        
-        st.markdown(
-            f'<div class="section-title">Found {len(results)} result{"s" if len(results) != 1 else ""} for “{html.escape(search_query)}”</div>',
-            unsafe_allow_html=True
-        )
+    if query.strip():
+        start = time.perf_counter()
+        results = search_movies(query, movies)
+        elapsed_ms = (time.perf_counter() - start) * 1000
+
         if results:
+            count = len(results)
+            st.markdown(
+                f'<div class="section-title">{count} result{"s" if count != 1 else ""} '
+                f'for “{html.escape(query.strip())}”</div>'
+                f'<div class="section-sub">Searched {len(movies)} movies in {elapsed_ms:.1f} ms</div>',
+                unsafe_allow_html=True,
+            )
+
+            top = results[0]
+            if top['kind'] == 'typo':
+                suggestion = top['movie'][1]
+                st.button(f"Did you mean “{suggestion}”?", key="suggest",
+                          on_click=set_query, args=(suggestion,))
+
             st.markdown("".join(render_card(r) for r in results), unsafe_allow_html=True)
         else:
-            st.markdown('<div class="empty">Kuch nahi mila 😕 — database khaali hai?</div>', unsafe_allow_html=True)
+            st.markdown(
+                f'<div class="empty"><b>No matches for “{html.escape(query.strip())}”</b>'
+                'Check the spelling, or try a shorter title or a genre like “drama”.</div>',
+                unsafe_allow_html=True,
+            )
     else:
-        st.markdown('<div class="section-title">🎲 Popular Movies</div>', unsafe_allow_html=True)
+        st.markdown(
+            '<div class="section-title">Top rated</div>'
+            '<div class="section-sub">Start typing above, or pick a movie to search for.</div>',
+            unsafe_allow_html=True,
+        )
         if movies:
-            st.markdown(render_grid(movies[:12]), unsafe_allow_html=True)
+            top_rated = sorted(movies, key=lambda m: m[4] or 0, reverse=True)[:12]
+            st.markdown(render_grid(top_rated), unsafe_allow_html=True)
         else:
-            st.markdown('<div class="empty">Database khaali hai — sidebar se movie add karo.</div>', unsafe_allow_html=True)
+            st.markdown(
+                '<div class="empty"><b>Your collection is empty</b>'
+                'Open the sidebar (top left) and add your first movie.</div>',
+                unsafe_allow_html=True,
+            )
 
-
-# ============================================================
-# RUN APP
-# ============================================================
 
 if __name__ == "__main__":
     main()

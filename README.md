@@ -24,13 +24,22 @@ python fuzzy_search.py      # command-line version
 
 | File | Purpose |
 |---|---|
-| `app.py` | Streamlit web app (search + add movies) |
-| `fuzzy_search.py` | CLI version of the search |
-| `inverted_index.py` | Word -> movie index for fast lookups (used by `app.py` before fuzzy scan) |
-| `test_index.py` | Compares index search vs fuzzy scan timings |
+| `app.py` | Streamlit web app (search, add movies) |
+| `inverted_index.py` | Word -> movie index (exact words in titles and genres) |
+| `ngram_index.py` | Character n-gram index and hybrid search (typo tolerance) |
+| `fuzzy_search.py` | Command-line search using edit distance |
+| `test_index.py`, `test_ngram.py` | Index checks and timing comparisons |
 | `setup_db.py` | Creates the empty `movies.db` table |
 | `fetch_movies.py` | Bulk-fetches a starter list of movies from OMDb |
 | `movies.db` | SQLite database (sample data included) |
+
+## How search works
+
+1. **Word index** - exact words from titles and genres ("dark", "crime").
+2. **N-gram index** - 3-letter chunks of each title, so "titanik" still shares "tit", "ita", "tan" and "ani" with "Titanic". Candidates are ranked by Dice similarity.
+3. **Edit-distance scan** - only used when both indexes find nothing.
+
+Run `python test_ngram.py` to check typo handling and compare timings.
 
 ## Team workflow
 

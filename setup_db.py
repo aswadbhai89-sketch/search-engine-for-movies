@@ -19,4 +19,4 @@ cursor.execute('''
 conn.commit()
 conn.close()
 
-print("✅ Database aur table ready!")
+print("✅ Database and table ready!")

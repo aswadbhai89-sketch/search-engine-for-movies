@@ -7,20 +7,20 @@ from collections import defaultdict
 
 def tokenize(text):
     """
-    Text ko words mein todta hai
+    Split text into lowercase words.
     "The Dark Knight!" -> ["the", "dark", "knight"]
     "Spider-Man"       -> ["spider", "man"]
     """
     if not text:
         return []
     text = text.lower()
-    # Non-alphanumeric ko space banao (hyphen wale naam sahi split hon)
+    # Replace punctuation with spaces so hyphenated names split correctly
     text = re.sub(r'[^a-z0-9\s]', ' ', text)
     return text.split()
 
 
 def load_movies(db_path='movies.db'):
-    """Database se saari movies padho"""
+    """Read all movies from the database."""
     conn = sqlite3.connect(db_path)
     try:
         return conn.execute(
@@ -30,14 +30,14 @@ def load_movies(db_path='movies.db'):
         conn.close()
 
 
-def build_inverted_index(db_path='movies.db'):
+def build_inverted_index(db_path='movies.db', movies=None):
     """
-    Database se movies padho aur inverted index banao
+    Build a word -> movie ids index over titles and genres.
     Returns: dict {word: set(movie_ids)}
     """
     index = defaultdict(set)
 
-    for movie in load_movies(db_path):
+    for movie in (movies if movies is not None else load_movies(db_path)):
         movie_id = movie[0]
         title_words = tokenize(movie[1])
         genre_words = tokenize(movie[3])
@@ -48,24 +48,24 @@ def build_inverted_index(db_path='movies.db'):
     return dict(index)
 
 
-def get_movies_dict(db_path='movies.db'):
-    """Database se {movie_id: movie_tuple} banao"""
-    return {movie[0]: movie for movie in load_movies(db_path)}
+def get_movies_dict(db_path='movies.db', movies=None):
+    """Build {movie_id: movie_tuple}."""
+    return {movie[0]: movie for movie in (movies if movies is not None else load_movies(db_path))}
 
 
 def search_with_index(query, index, movies_dict, max_results=10):
     """
-    Inverted index se search karo
+    Look up query words in the inverted index.
 
-    Returns: list of movie tuples, ya None agar index me kuch nahi mila
-             (None ka matlab: fuzzy search par fallback karo)
+    Returns: list of movie tuples, or None when nothing matched
+             (None means: fall back to a fuzzier search).
     """
     query_words = tokenize(query)
 
     if not query_words:
         return None
 
-    # {movie_id: kitne query words match hue}
+    # {movie_id: number of query words matched}
     word_matches = {}
     for word in set(query_words):
         for movie_id in index.get(word, ()):
@@ -82,14 +82,14 @@ def search_with_index(query, index, movies_dict, max_results=10):
     if not scored:
         return None
 
-    # Zyada words match = upar; barabar score par title ke hisaab se (stable order)
+    # More matched words first; ties broken alphabetically for a stable order
     scored.sort(key=lambda x: (-x[0], x[1][1].lower()))
 
     return [movie for _, movie in scored[:max_results]]
 
 
 def print_index_stats(index):
-    """Index ke stats print karo (debugging ke liye)"""
+    """Print index statistics (for debugging)."""
     print(f"Total unique words: {len(index)}")
     print("Sample entries:")
     for word, ids in list(index.items())[:10]:
