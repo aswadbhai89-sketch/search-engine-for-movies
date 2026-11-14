@@ -101,7 +101,11 @@ def main():
         "Fight Club",
         "Forrest Gump",
         "The Matrix",
-        "Goodfellas"
+        "Goodfellas",
+        # TV series (the app shows seasons and episodes for these)
+        "Breaking Bad",
+        "Game of Thrones",
+        "Stranger Things"
     ]
     
     print(f"\n🎬 Fetching {len(movies_list)} movies...\n")

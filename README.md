@@ -27,8 +27,10 @@ python fuzzy_search.py      # command-line version
 | `app.py` | Streamlit web app (search, add movies) |
 | `inverted_index.py` | Word -> movie index (exact words in titles and genres) |
 | `ngram_index.py` | Character n-gram index and hybrid search (typo tolerance) |
+| `tfidf_search.py` | TF-IDF ranking over titles, genres and plots |
+| `omdb_client.py` | OMDb API wrapper (lookup, full details, season episodes) |
 | `fuzzy_search.py` | Command-line search using edit distance |
-| `test_index.py`, `test_ngram.py` | Index checks and timing comparisons |
+| `test_index.py`, `test_ngram.py`, `test_tfidf.py` | Search checks and timing comparisons |
 | `setup_db.py` | Creates the empty `movies.db` table |
 | `fetch_movies.py` | Bulk-fetches a starter list of movies from OMDb |
 | `movies.db` | SQLite database (sample data included) |
@@ -36,10 +38,19 @@ python fuzzy_search.py      # command-line version
 ## How search works
 
 1. **Word index** - exact words from titles and genres ("dark", "crime").
-2. **N-gram index** - 3-letter chunks of each title, so "titanik" still shares "tit", "ita", "tan" and "ani" with "Titanic". Candidates are ranked by Dice similarity.
-3. **Edit-distance scan** - only used when both indexes find nothing.
+2. **N-gram index** - 3-letter chunks of each title, so "titanik" still shares "tit", "ita", "tan" and "ani" with "Titanic".
+3. **TF-IDF** - ranks movies by how well a few story words match the plot ("dream heist" finds Inception). Rare words count more than common ones.
+4. **Edit-distance scan** - only used when all the indexes find nothing.
 
-Run `python test_ngram.py` to check typo handling and compare timings.
+Results are ordered: exact/title matches, then genre and plot matches, then typo matches.
+
+## Movie and series details
+
+Select any title to open its page: full plot, cast, director, runtime, awards and IMDb rating, loaded live from OMDb. For TV series there is also a season picker, the episode list with air dates and ratings, and a plot and credits panel for any episode.
+
+If OMDb is unreachable (or the daily request limit is hit) the page falls back to the data stored in `movies.db`.
+
+Run `python test_ngram.py` and `python test_tfidf.py` to check search quality and compare timings.
 
 ## Team workflow
 
