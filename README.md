@@ -26,6 +26,8 @@ python fuzzy_search.py      # command-line version
 |---|---|
 | `app.py` | Streamlit web app (search + add movies) |
 | `fuzzy_search.py` | CLI version of the search |
+| `inverted_index.py` | Word -> movie index for fast lookups (used by `app.py` before fuzzy scan) |
+| `test_index.py` | Compares index search vs fuzzy scan timings |
 | `setup_db.py` | Creates the empty `movies.db` table |
 | `fetch_movies.py` | Bulk-fetches a starter list of movies from OMDb |
 | `movies.db` | SQLite database (sample data included) |
