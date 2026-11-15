@@ -27,10 +27,11 @@ python fuzzy_search.py      # command-line version
 | `app.py` | Streamlit web app (search, add movies) |
 | `inverted_index.py` | Word -> movie index (exact words in titles and genres) |
 | `ngram_index.py` | Character n-gram index and hybrid search (typo tolerance) |
-| `tfidf_search.py` | TF-IDF ranking over titles, genres and plots |
+| `bm25_search.py` | BM25 ranking over titles, genres and plots (used by the app) |
+| `tfidf_search.py` | TF-IDF ranking, kept for comparison and shared text processing |
 | `omdb_client.py` | OMDb API wrapper (lookup, full details, season episodes) |
 | `fuzzy_search.py` | Command-line search using edit distance |
-| `test_index.py`, `test_ngram.py`, `test_tfidf.py` | Search checks and timing comparisons |
+| `test_index.py`, `test_ngram.py`, `test_tfidf.py`, `test_bm25.py` | Search checks and timing comparisons |
 | `setup_db.py` | Creates the empty `movies.db` table |
 | `fetch_movies.py` | Bulk-fetches a starter list of movies from OMDb |
 | `movies.db` | SQLite database (sample data included) |
@@ -39,7 +40,7 @@ python fuzzy_search.py      # command-line version
 
 1. **Word index** - exact words from titles and genres ("dark", "crime").
 2. **N-gram index** - 3-letter chunks of each title, so "titanik" still shares "tit", "ita", "tan" and "ani" with "Titanic".
-3. **TF-IDF** - ranks movies by how well a few story words match the plot ("dream heist" finds Inception). Rare words count more than common ones.
+3. **BM25** - ranks movies by how well a few story words match the plot ("dream heist" finds Inception). Rare words count more, repeated words stop helping after a while, and long descriptions are not favoured over short ones. This is the ranking used by most search engines; `k1` and `b` in `bm25_search.py` tune it, and `python test_bm25.py` shows how a score is built up step by step.
 4. **Edit-distance scan** - only used when all the indexes find nothing.
 
 Results are ordered: exact/title matches, then genre and plot matches, then typo matches.
@@ -50,7 +51,7 @@ Select any title to open its page: full plot, cast, director, runtime, awards an
 
 If OMDb is unreachable (or the daily request limit is hit) the page falls back to the data stored in `movies.db`.
 
-Run `python test_ngram.py` and `python test_tfidf.py` to check search quality and compare timings.
+Run `python test_ngram.py`, `python test_tfidf.py` and `python test_bm25.py` to check search quality and compare timings.
 
 ## Team workflow
 

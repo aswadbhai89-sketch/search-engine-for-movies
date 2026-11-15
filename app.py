@@ -12,7 +12,7 @@ from PIL import Image
 from inverted_index import build_inverted_index, get_movies_dict, load_movies
 from ngram_index import build_ngram_index, search_hybrid
 from omdb_client import clean, get_details, get_season, lookup_title
-from tfidf_search import build_tfidf_index, search_tfidf
+from bm25_search import build_bm25_index, search_bm25
 
 OMDB_API_KEY = "69f58f62"
 
@@ -335,14 +335,14 @@ def levenshtein_distance(s1, s2):
 
 @st.cache_resource(show_spinner=False)
 def get_indexes():
-    """Build the word, n-gram and TF-IDF indexes once; cleared whenever a movie is added."""
+    """Build the word, n-gram and BM25 indexes once; cleared whenever a movie is added."""
     movies = load_movies()
     movies_dict = get_movies_dict(movies=movies)
     return (
         build_inverted_index(movies=movies),
         build_ngram_index(movies=movies),
         movies_dict,
-        build_tfidf_index(movies=movies),
+        build_bm25_index(movies=movies),
     )
 
 
@@ -364,24 +364,25 @@ def search_movies(query, movies, max_results=10):
     """
     Ranking, best first:
       1. exact and title matches        (the user typed a title)
-      2. genre and plot matches         (ordered by TF-IDF relevance)
+      2. genre and plot matches         (ordered by BM25 relevance)
       3. typo matches                   (closest titles by n-gram similarity)
     The edit-distance scan runs only when every index comes back empty.
     """
     try:
-        word_index, ngram_index, movies_dict, tfidf_index = get_indexes()
+        word_index, ngram_index, movies_dict, bm25_index = get_indexes()
         hybrid = search_hybrid(query, word_index, ngram_index, movies_dict, max_results=max_results)
-        tfidf = search_tfidf(query, tfidf_index, movies_dict, max_results=max_results)
+        bm25 = search_bm25(query, bm25_index, movies_dict, max_results=max_results)
     except Exception:
-        hybrid, tfidf = [], []
+        hybrid, bm25 = [], []
 
-    tfidf_scores = {movie[0]: score for movie, score in tfidf}
+    bm25_scores = {movie[0]: score for movie, score in bm25}
     top = [r for r in hybrid if r['kind'] in ('exact', 'title')]
     typos = [r for r in hybrid if r['kind'] == 'typo']
     middle = {r['movie'][0]: r for r in hybrid if r['kind'] == 'genre'}
-    for movie, score in tfidf:
-        middle.setdefault(movie[0], {'movie': movie, 'similarity': score * 100, 'kind': 'plot'})
-    middle = sorted(middle.values(), key=lambda r: -tfidf_scores.get(r['movie'][0], 0))
+    for movie, score in bm25:
+        # BM25 scores are unbounded, so no percentage is shown for plot matches
+        middle.setdefault(movie[0], {'movie': movie, 'similarity': 0, 'kind': 'plot'})
+    middle = sorted(middle.values(), key=lambda r: -bm25_scores.get(r['movie'][0], 0))
 
     seen, results = set(), []
     for r in top + middle + typos:
@@ -676,7 +677,7 @@ def main():
 
         st.divider()
         st.metric("Titles in collection", len(movies))
-        st.caption("Search combines a word index, character n-grams and TF-IDF plot relevance.")
+        st.caption("Search combines a word index, character n-grams and BM25 plot relevance.")
 
     # ---------- hero + search ----------
     st.markdown(
