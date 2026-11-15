@@ -43,7 +43,7 @@ def fetch_movie(title, api_key):
         if data.get('Response') == 'True':
             return data
         else:
-            print(f"❌ Movie nahi mili: {title}")
+            print(f"❌ Movie not found: {title}")
             return None
     except Exception as e:
         print(f"❌ Error: {e}")
@@ -101,10 +101,14 @@ def main():
         "Fight Club",
         "Forrest Gump",
         "The Matrix",
-        "Goodfellas"
+        "Goodfellas",
+        # TV series (the app shows seasons and episodes for these)
+        "Breaking Bad",
+        "Game of Thrones",
+        "Stranger Things"
     ]
     
-    print(f"\n🎬 {len(movies_list)} movies fetch kar rahi hoon...\n")
+    print(f"\n🎬 Fetching {len(movies_list)} movies...\n")
     
     for i, title in enumerate(movies_list, 1):
         print(f"[{i}/{len(movies_list)}] Fetching: {title}")
@@ -117,7 +121,7 @@ def main():
         time.sleep(1)
     
     print("\n" + "="*50)
-    print("✅ Saari movies database mein save ho gayi!")
+    print("✅ All movies saved to the database!")
     print("="*50)
 
 
